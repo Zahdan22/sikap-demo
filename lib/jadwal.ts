@@ -82,7 +82,7 @@ export async function getJamKerjaOptions(presetId: number | null): Promise<JamKe
     .order('jam_mulai')
   if (error) throw new Error('Gagal ambil opsi jam kerja: ' + error.message)
   return data || []
-} 
+}
 
 export async function getJobdeskOptions(): Promise<JobdeskOption[]> {
   const supabase = createClient()

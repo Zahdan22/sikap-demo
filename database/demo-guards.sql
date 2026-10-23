@@ -31,4 +31,3 @@ BEGIN
 END $$;
 CREATE TRIGGER protect_demo_profile BEFORE UPDATE OR DELETE ON public.users FOR EACH ROW EXECUTE FUNCTION private.protect_demo_profile();
 REVOKE ALL ON FUNCTION private.protect_demo_auth(), private.protect_demo_profile() FROM PUBLIC, anon, authenticated;
-

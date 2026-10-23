@@ -1777,4 +1777,3 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated, service_
 INSERT INTO storage.buckets(id,name,public,file_size_limit,allowed_mime_types) VALUES ('attendance-photos','attendance-photos',false,2500000,ARRAY['image/jpeg']);
 INSERT INTO storage.buckets(id,name,public,file_size_limit,allowed_mime_types) VALUES ('leave-attachments','leave-attachments',false,3000000,ARRAY['image/jpeg','image/png','application/pdf']);
 INSERT INTO storage.buckets(id,name,public,file_size_limit,allowed_mime_types) VALUES ('attendance-corrections','attendance-corrections',false,3000000,ARRAY['image/jpeg','image/png','image/webp']);
-
