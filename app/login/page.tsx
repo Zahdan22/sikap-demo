@@ -42,7 +42,7 @@ export default function LoginPage() {
 
         <div className="flex flex-col items-center px-8 pt-8">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm">
-            <Image src="/icons/icon-192.png" alt="SIKAP" width={44} height={44} />
+            <Image src="/icons/icon-192.png" alt="SIKAP" width={56} height={56} className="rounded-xl" />
           </div>
 
           <h1 className="mt-4 text-xl font-semibold text-ink">Jelajahi SIKAP Demo</h1>
