@@ -24,7 +24,7 @@ Password ini sengaja dipublikasikan dan hanya berlaku untuk data simulasi. Dua c
 
 Untuk instalasi database kosong: jalankan `database/schema.sql`, `database/demo-guards.sql`, `database/demo-reset.sql`, kemudian `database/demo-rates.sql`. Jangan jalankan ulang snapshot schema pada database yang sudah berisi tabel.
 
-Setelah Secret API Key tersedia:
+Saat menyiapkan ulang database:
 
 1. `npm run demo:accounts` membuat akun melalui Supabase Auth Admin API.
 2. Jalankan `database/register-demo-accounts.sql` melalui SQL Editor proyek demo untuk melindungi akun bersama.
@@ -42,12 +42,14 @@ Reset mengganti data transaksi demo, termasuk arsip payroll, dan mempertahankan 
 
 ## Deployment
 
-Hubungkan repository `Zahdan22/sikap-demo` ke proyek Vercel baru `sikap-demo` pada tim `vandaz`. Isi tiga variabel dari `.env.local` di Vercel; Secret API Key hanya untuk server dan tidak memakai awalan `NEXT_PUBLIC_`. Sesuaikan Supabase Auth Site URL dengan alamat deployment setelah tersedia.
+Demo live: [sikap-demo.vercel.app](https://sikap-demo.vercel.app). Proyek Vercel `sikap-demo` berada di tim `vandaz` dan menggunakan Supabase demo `ovbvnqhoexmdjqrstquz`. URL, anon key, dan secret server sudah dikonfigurasi untuk Production dan Preview. Secret server tidak boleh memakai awalan `NEXT_PUBLIC_` atau masuk ke Git.
+
+Repository: [Zahdan22/sikap-demo](https://github.com/Zahdan22/sikap-demo). Deployment dilakukan dari checkout lokal; koneksi Git otomatis Vercel belum aktif.
 
 ## Verifikasi
 
 `npm run build`, `npx tsc --noEmit`, dan `node --test tests/*.test.mjs tests/*.test.cjs`.
 
-Pengujian awal: build produksi dan 23 tes lulus. Seed/reset serta proteksi password/status akun diuji dalam transaksi database yang di-rollback. Login nyata, persetujuan, payroll end-to-end, dan deployment perlu diverifikasi setelah kredensial demo tersedia.
+Build produksi dan 23 tes lulus. Seed/reset dan perlindungan akun diuji di database. Deployment Production berstatus Ready; alur login Crew, pengajuan dan persetujuan lembur, login Manager Keuangan, serta perhitungan payroll sudah dicoba di situs live.
 
 Supabase Advisor menampilkan peringatan untuk sepuluh RPC SECURITY DEFINER warisan aplikasi. RPC tersebut memiliki pemeriksaan pengguna/peran di tubuh fungsi; izin eksekusi dipertahankan untuk fitur aplikasi. Panduan: https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable
