@@ -12,7 +12,13 @@ import Spinner from '@/components/Spinner'
 
 type ViewState = 'loading' | 'error' | 'no-schedule' | 'ready-checkin' | 'ready-checkout' | 'done'
 
-function prepareLocation() {
+type PreparedLocation = {
+  position: { latitude: number; longitude: number }
+  acquiredAt: number
+  address: Promise<string>
+}
+
+function prepareLocation(): Promise<PreparedLocation | { error: Error }> {
   return Promise.resolve({ latitude: -7.98, longitude: 112.63 }).then(position => ({
     position,
     acquiredAt: Date.now(),
@@ -20,6 +26,15 @@ function prepareLocation() {
   })).catch((error: unknown) => ({
     error: error instanceof Error ? error : new Error('Gagal mengambil lokasi.'),
   }))
+}
+
+async function addressForWatermark(address: Promise<string>) {
+  // Coordinates are the attendance evidence. The descriptive address must not
+  // delay a crew member after taking a photo.
+  return Promise.race([
+    address,
+    new Promise<string>((resolve) => setTimeout(() => resolve(''), 300)),
+  ])
 }
 
 export default function CheckInOutPage() {
@@ -100,7 +115,7 @@ export default function CheckInOutPage() {
       if ('error' in prepared) throw prepared.error
       const { position } = prepared
       setProcessingMessage('Menyiapkan foto…')
-      const address = await prepared.address
+      const address = await addressForWatermark(prepared.address)
       const watermarked = await applyWatermark(photo, {
         timestamp: capturedAt,
         latitude: position.latitude,

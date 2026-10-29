@@ -825,6 +825,11 @@ begin
       where s.user_id = current_status.user_id
         and s.tanggal >= current_status.effective_on
         and s.tanggal <= today_jakarta
+        and not exists (
+          select 1
+          from public.crew_payroll_counted_workdays cwd
+          where cwd.schedule_id = s.id
+        )
       order by s.tanggal, s.id
     loop
       insert into public.crew_payroll_counted_workdays (user_id, work_date, schedule_id)
@@ -1297,6 +1302,7 @@ CREATE UNIQUE INDEX users_single_finance_manager_idx ON public.users USING btree
 CREATE INDEX schedule_jobdesk_block_schedule_idx ON public.schedule_jobdesk_block USING btree (schedule_id, mulai_menit, selesai_menit);
 CREATE INDEX payroll_adjustments_period_user_idx ON public.payroll_adjustments USING btree (payroll_period_id, user_id);
 CREATE INDEX crew_payroll_tier_history_user_effective_idx ON public.crew_payroll_tier_history USING btree (user_id, effective_on, id);
+CREATE INDEX schedule_payroll_date_idx ON public.schedule USING btree (tanggal, id) WHERE (user_id IS NOT NULL);
 CREATE INDEX payroll_items_user_idx ON public.payroll_items USING btree (user_id);
 CREATE INDEX overtime_requests_user_date_idx ON public.overtime_requests USING btree (user_id, tanggal);
 CREATE INDEX overtime_requests_status_date_idx ON public.overtime_requests USING btree (status, tanggal);

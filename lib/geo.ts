@@ -47,7 +47,9 @@ export function getCurrentPosition(): Promise<GeoPosition> {
       {
         enableHighAccuracy: true, // minta GPS presisi tinggi, bukan cuma dari WiFi/IP
         timeout: 10000,
-        maximumAge: 0, // jangan pakai lokasi cache lama
+        // A location is revalidated before attendance is submitted, so a very
+        // recent GPS reading is both safe and faster to acquire.
+        maximumAge: 15_000,
       }
     )
   })
