@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase/client'
 import PageHeader from '@/components/PageHeader'
 import Spinner from '@/components/Spinner'
 
-type ViewState = 'loading' | 'error' | 'no-schedule' | 'ready-checkin' | 'ready-checkout' | 'done'
+type ViewState = 'loading' | 'error' | 'no-schedule' | 'ready-checkin' | 'ready-checkout' | 'checkout-expired' | 'done'
 
 type PreparedLocation = {
   position: { latitude: number; longitude: number }
@@ -65,7 +65,7 @@ export default function CheckInOutPage() {
       }
       setUserId(user.id)
 
-      const { schedule, attendance } = await getTodayStatus(user.id)
+      const { schedule, attendance, checkoutGraceExpired } = await getTodayStatus(user.id)
       if (version !== statusVersion.current) return
       if (!schedule) {
         setViewState('no-schedule')
@@ -74,7 +74,7 @@ export default function CheckInOutPage() {
       setScheduleInfo({ jamMulai: schedule.jam_mulai, jamSelesai: schedule.jam_selesai })
 
       if (!attendance) setViewState('ready-checkin')
-      else if (!attendance.jam_pulang_aktual) setViewState('ready-checkout')
+      else if (!attendance.jam_pulang_aktual) setViewState(checkoutGraceExpired ? 'checkout-expired' : 'ready-checkout')
       else setViewState('done')
     } catch (error) {
       // A failed refresh must not turn an already saved attendance into an error.
@@ -150,7 +150,7 @@ export default function CheckInOutPage() {
   }
 
   const isCheckout = viewState === 'ready-checkout'
-  const title = isCheckout ? 'Absen Pulang' : 'Absen Masuk'
+  const title = isCheckout || viewState === 'checkout-expired' ? 'Absen Pulang' : 'Absen Masuk'
 
   return (
     <div className="flex min-h-full flex-col bg-cream pb-6">
@@ -169,6 +169,12 @@ export default function CheckInOutPage() {
         {viewState === 'no-schedule' && (
           <div className="mt-6 rounded-2xl border border-cream-dim bg-cream-card px-5 py-6 text-center">
             <p className="text-sm text-muted">Tidak ada jadwal kerja untuk hari ini.</p>
+          </div>
+        )}
+
+        {viewState === 'checkout-expired' && (
+          <div role="alert" className="mt-6 rounded-2xl border border-brand/20 bg-brand/10 px-5 py-6 text-center">
+            <p className="text-sm leading-relaxed text-brand">Batas absen pulang sudah lewat 45 menit dari jam kerja selesai. Absensi tercatat sebagai telat absen pulang; hubungi manager jika ada kendala teknis.</p>
           </div>
         )}
 

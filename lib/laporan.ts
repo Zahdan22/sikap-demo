@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { isCheckOutGraceExpired } from '@/lib/attendance-status'
 
 export type EmployeeSummary = {
   userId: string
@@ -24,6 +25,37 @@ export type AttendanceDetail = {
   fotoPulang: string | null
 }
 
+type ScheduleAttendance = {
+  tanggal: string
+  jam_mulai: string
+  jam_selesai: string
+  durasi_jam: number | string | null
+}
+
+type RawAttendance = {
+  id: number
+  user_id?: string
+  jam_masuk_aktual: string | null
+  jam_pulang_aktual: string | null
+  status_masuk: string
+  status_pulang: string
+  menit_telat: number | null
+  foto_masuk: string | null
+  foto_pulang: string | null
+  schedule: ScheduleAttendance | null
+  users?: { nama: string; status_aktif: boolean } | null
+}
+
+type AttendanceWithSchedule = RawAttendance & { schedule: ScheduleAttendance }
+
+function hasSchedule(row: RawAttendance): row is AttendanceWithSchedule {
+  return row.schedule !== null
+}
+
+function isVisibleActiveAttendance(row: RawAttendance): row is AttendanceWithSchedule {
+  return hasSchedule(row) && row.users?.status_aktif === true
+}
+
 // Ambil semua attendance + jadwal + nama karyawan dalam rentang tanggal
 async function getRawAttendanceInRange(startDate: string, endDate: string) {
   const supabase = createClient()
@@ -33,13 +65,20 @@ async function getRawAttendanceInRange(startDate: string, endDate: string) {
     .select(`
       id, user_id, jam_masuk_aktual, jam_pulang_aktual, status_masuk, status_pulang, menit_telat, foto_masuk, foto_pulang,
       schedule:schedule_id (tanggal, jam_mulai, jam_selesai, durasi_jam),
-      users:user_id (nama)
+      users:user_id (nama, status_aktif)
     `)
     .gte('schedule.tanggal', startDate)
     .lte('schedule.tanggal', endDate)
 
   if (error) throw new Error('Gagal ambil data laporan: ' + error.message)
-  return (data || []).filter((row: any) => row.schedule !== null) // buang kalau join schedule gagal match filter
+  return ((data || []) as unknown as RawAttendance[]).filter(isVisibleActiveAttendance)
+}
+
+function displayedCheckOutStatus(row: AttendanceWithSchedule) {
+  if (row.jam_masuk_aktual && !row.jam_pulang_aktual && isCheckOutGraceExpired({
+    tanggal: row.schedule.tanggal, jamMulai: row.schedule.jam_mulai, jamSelesai: row.schedule.jam_selesai,
+  })) return 'lewat_batas'
+  return row.status_pulang
 }
 
 export async function getEmployeeSummaries(startDate: string, endDate: string): Promise<EmployeeSummary[]> {
@@ -47,7 +86,8 @@ export async function getEmployeeSummaries(startDate: string, endDate: string): 
 
   const summaryMap: Record<string, EmployeeSummary> = {}
 
-  for (const row of rows as any[]) {
+  for (const row of rows) {
+    if (!row.user_id) continue
     const userId = row.user_id
     if (!summaryMap[userId]) {
       summaryMap[userId] = {
@@ -64,7 +104,7 @@ export async function getEmployeeSummaries(startDate: string, endDate: string): 
     if (row.jam_masuk_aktual) s.totalHariHadir += 1
     if (row.status_masuk === 'telat') s.totalHariTelat += 1
     if ((row.menit_telat || 0) >= 30) s.totalIkhlas += 1
-    if (row.jam_masuk_aktual && !row.jam_pulang_aktual) s.totalLupaAbsenPulang += 1
+    if (row.jam_masuk_aktual && !row.jam_pulang_aktual && displayedCheckOutStatus(row) === 'lewat_batas') s.totalLupaAbsenPulang += 1
   }
 
   return Object.values(summaryMap).sort((a, b) => a.nama.localeCompare(b.nama))
@@ -72,6 +112,16 @@ export async function getEmployeeSummaries(startDate: string, endDate: string): 
 
 export async function getEmployeeDetail(userId: string, startDate: string, endDate: string): Promise<AttendanceDetail[]> {
   const supabase = createClient()
+
+  const { data: activeCrew, error: crewError } = await supabase
+    .from('users')
+    .select('id')
+    .eq('id', userId)
+    .eq('role', 'crew')
+    .eq('status_aktif', true)
+    .maybeSingle()
+  if (crewError) throw new Error('Gagal memeriksa status crew: ' + crewError.message)
+  if (!activeCrew) return []
 
   const { data, error } = await supabase
     .from('attendance')
@@ -85,9 +135,9 @@ export async function getEmployeeDetail(userId: string, startDate: string, endDa
 
   if (error) throw new Error('Gagal ambil detail: ' + error.message)
 
-  return (data || [])
-    .filter((row: any) => row.schedule !== null)
-    .map((row: any) => ({
+  return ((data || []) as unknown as RawAttendance[])
+    .filter(hasSchedule)
+    .map((row) => ({
       id: row.id,
       tanggal: row.schedule.tanggal,
       jamMulaiJadwal: row.schedule.jam_mulai,
@@ -96,8 +146,8 @@ export async function getEmployeeDetail(userId: string, startDate: string, endDa
       jamPulangAktual: row.jam_pulang_aktual,
       durasiJam: Number(row.schedule.durasi_jam) || 0,
       statusMasuk: row.status_masuk,
-      statusPulang: row.status_pulang,
-      menitTelat: row.menit_telat,
+      statusPulang: displayedCheckOutStatus(row),
+      menitTelat: Number(row.menit_telat || 0),
       fotoMasuk: row.foto_masuk,
       fotoPulang: row.foto_pulang,
     }))

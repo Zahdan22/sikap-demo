@@ -71,7 +71,7 @@ function getIcon(icon: NavIcon, className: string): ReactNode {
 
 export default function BottomNav() {
   const pathname = usePathname()
-  const hiddenPaths = ['/checkin', '/izin', '/tukar-shift', '/lembur', '/pelanggaran', '/koreksi-absensi', '/settings', '/login']
+  const hiddenPaths = ['/checkin', '/izin', '/tukar-shift', '/lembur', '/pelanggaran', '/banding-pelanggaran', '/koreksi-absensi', '/finance/banding-pelanggaran', '/settings', '/login']
   const isHidden = hiddenPaths.some((p) => pathname.startsWith(p))
   const [role, setRole] = useState<string>('crew')
   const [loaded, setLoaded] = useState(false)
@@ -100,7 +100,7 @@ export default function BottomNav() {
   const items: { href: string; label: string; icon: NavIcon }[] = role === 'finance'
     ? [
         { href: '/finance', label: 'Beranda', icon: 'dashboard' },
-        { href: '/finance/crew', label: 'Status Kru', icon: 'history' },
+        { href: '/finance/crew', label: 'Manajemen Crew', icon: 'history' },
         { href: '/finance/payroll', label: 'Penggajian', icon: 'payroll' },
         { href: '/finance/laporan', label: 'Laporan', icon: 'report' },
       ]
@@ -114,6 +114,7 @@ export default function BottomNav() {
         { href: '/dashboard', label: 'Beranda', icon: 'dashboard' },
         { href: '/riwayat', label: 'Riwayat', icon: 'history' },
         { href: '/jadwal-saya', label: 'Jadwal', icon: 'schedule' },
+        { href: '/penggajian', label: 'Slip Gaji', icon: 'payroll' },
       ]
 
   return (

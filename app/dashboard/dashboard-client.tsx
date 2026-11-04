@@ -27,6 +27,11 @@ function getRelatedName(value: { nama: string } | { nama: string }[] | null | un
   return Array.isArray(value) ? value[0]?.nama : value?.nama
 }
 
+function isRelatedActive(value: { status_aktif: boolean } | { status_aktif: boolean }[] | null | undefined) {
+  const relation = Array.isArray(value) ? value[0] : value
+  return relation?.status_aktif === true
+}
+
 export default function DashboardClient({ nama, role }: Props) {
   if (role === 'manager') {
     return <ManagerDashboard nama={nama} />
@@ -49,12 +54,16 @@ function ManagerDashboard({ nama }: { nama: string }) {
       setCrewToday(data)
       setLoadingCrew(false)
             const supabase = createClient()
-      const { count: izinCount } = await supabase
-        .from('leave_request').select('*', { count: 'exact', head: true }).eq('status', 'pending')
-      const { count: swapCount } = await supabase
-        .from('shift_swap_request').select('*', { count: 'exact', head: true }).eq('status', 'pending')
+      const [{ count: izinCount }, { data: swapRows }] = await Promise.all([
+        supabase.from('leave_request')
+          .select('id, requester:users!user_id!inner(status_aktif)', { count: 'exact', head: true })
+          .eq('status', 'pending').eq('requester.status_aktif', true),
+        supabase.from('shift_swap_request')
+          .select('id, target_type, requester:users!requester_id!inner(status_aktif), target:users!target_id(status_aktif)')
+          .eq('status', 'pending').eq('requester.status_aktif', true),
+      ])
       setPendingIzin(izinCount || 0)
-      setPendingSwap(swapCount || 0)
+      setPendingSwap((swapRows || []).filter((row) => row.target_type === 'freelance' || isRelatedActive(row.target)).length)
     }
     load()
   }, [])
@@ -67,23 +76,26 @@ function ManagerDashboard({ nama }: { nama: string }) {
         const [scheduleResult, leaveResult, swapResult] = await Promise.all([
           supabase
             .from('schedule')
-            .select('id, tanggal, jam_mulai, jam_selesai, created_at, updated_at, freelance_nama, users:user_id (nama)')
+            .select('id, user_id, tanggal, jam_mulai, jam_selesai, created_at, updated_at, freelance_nama, users:user_id (nama, status_aktif)')
             .order('updated_at', { ascending: false })
             .limit(8),
           supabase
             .from('leave_request')
-            .select('id, jenis, tanggal_mulai, tanggal_selesai, status, created_at, updated_at, users:user_id (nama)')
+            .select('id, jenis, tanggal_mulai, tanggal_selesai, status, created_at, updated_at, users:user_id!inner(nama, status_aktif)')
+            .eq('users.status_aktif', true)
             .order('updated_at', { ascending: false })
             .limit(8),
           supabase
             .from('shift_swap_request')
-            .select('id, tanggal, status, target_type, target_nama_freelance, created_at, updated_at, requester:requester_id (nama), target:target_id (nama)')
+            .select('id, tanggal, status, target_type, target_nama_freelance, created_at, updated_at, requester:requester_id!inner(nama, status_aktif), target:target_id(nama, status_aktif)')
+            .eq('requester.status_aktif', true)
             .order('updated_at', { ascending: false })
             .limit(8),
         ])
 
         const feed: ManagerActivity[] = []
         for (const row of scheduleResult.data || []) {
+          if (row.user_id && !isRelatedActive(row.users)) continue
           const created = !row.updated_at || !row.created_at || Math.abs(new Date(row.updated_at).getTime() - new Date(row.created_at).getTime()) < 1000
           const crewName = getRelatedName(row.users) || (row.freelance_nama ? `Freelance ${row.freelance_nama}` : 'Crew')
           feed.push({
@@ -108,6 +120,7 @@ function ManagerDashboard({ nama }: { nama: string }) {
           })
         }
         for (const row of swapResult.data || []) {
+          if (row.target_type === 'crew' && !isRelatedActive(row.target)) continue
           const requesterName = getRelatedName(row.requester) || 'Crew'
           const targetName = row.target_type === 'freelance' ? `Freelance ${row.target_nama_freelance || ''}` : getRelatedName(row.target) || 'rekan kerja'
           const title = row.status === 'pending'
@@ -269,7 +282,7 @@ function ManagerDashboard({ nama }: { nama: string }) {
 function CrewDashboard({ nama }: { nama: string }) {
   const [statusLabel, setStatusLabel] = useState('Memuat...')
   const [statusTone, setStatusTone] = useState<'default' | 'action'>('default')
-  const [monthStats, setMonthStats] = useState({ totalHours: 0, daysPresent: 0, lateCount: 0 })
+  const [todayShift, setTodayShift] = useState('Memuat jadwal...')
   const [todaySchedules, setTodaySchedules] = useState<DailySchedule[]>([])
   const [loadingTimeline, setLoadingTimeline] = useState(true)
 
@@ -281,26 +294,18 @@ function CrewDashboard({ nama }: { nama: string }) {
 
       const { schedule, attendance } = await getTodayStatus(user.id)
 
-      if (!schedule) { setStatusLabel('Tidak Ada Jadwal'); setStatusTone('default') }
-      else if (!attendance) { setStatusLabel('Belum Absen'); setStatusTone('action') }
-      else if (!attendance.jam_pulang_aktual) { setStatusLabel('Sudah Absen Masuk'); setStatusTone('action') }
-      else { setStatusLabel('Selesai Bekerja'); setStatusTone('default') }
+      if (!schedule) {
+        setTodayShift('Tidak ada jadwal shift hari ini')
+        setStatusLabel('Tidak Ada Jadwal'); setStatusTone('default')
+      } else {
+        const start = schedule.jam_mulai.slice(0, 5)
+        const end = schedule.jam_selesai.slice(0, 5)
+        setTodayShift(`${start}–${end}`)
+        if (!attendance) { setStatusLabel('Belum Absen'); setStatusTone('action') }
+        else if (!attendance.jam_pulang_aktual) { setStatusLabel('Sudah Absen Masuk'); setStatusTone('action') }
+        else { setStatusLabel('Selesai Bekerja'); setStatusTone('default') }
+      }
 
-      const now = new Date()
-      const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-      const { data: monthAttendance } = await supabase
-        .from('attendance')
-        .select('status_masuk, jam_masuk_aktual, schedule:schedule_id(jam_mulai, jam_selesai, durasi_jam, tanggal)')
-        .eq('user_id', user.id)
-        .gte('schedule.tanggal', startOfMonth)
-        .lte('schedule.tanggal', toDateString(now))
-
-      const rows = (monthAttendance || []).filter((r: any) => r.schedule !== null)
-      setMonthStats({
-        totalHours: rows.reduce((total: number, r: any) => total + (r.jam_masuk_aktual ? Number(r.schedule.durasi_jam || 0) : 0), 0),
-        daysPresent: rows.filter((r: any) => r.jam_masuk_aktual).length,
-        lateCount: rows.filter((r: any) => r.status_masuk === 'telat').length,
-      })
     }
     load()
   }, [])
@@ -330,6 +335,9 @@ function CrewDashboard({ nama }: { nama: string }) {
       <div className="mt-6 px-5">
         <div className="flex items-center justify-between rounded-2xl border border-cream-dim bg-cream-card px-5 py-4">
           <div>
+            <p className="text-xs uppercase tracking-wide text-muted">Jadwal shift hari ini</p>
+            <p className="mt-1 text-2xl font-bold tracking-tight text-ink">{todayShift}</p>
+            <div className="my-3 border-t border-cream-dim" />
             <p className="text-xs uppercase tracking-wide text-muted">Status Hari Ini</p>
             <p className="mt-1 text-lg font-semibold text-ink">{statusLabel}</p>
           </div>
@@ -361,6 +369,15 @@ function CrewDashboard({ nama }: { nama: string }) {
       <div className="mt-4 space-y-3 px-5">
         <CorrectionDashboardCard href="/koreksi-absensi" />
         <ViolationDashboardCard href="/pelanggaran" />
+        <Link href="/banding-pelanggaran" className="flex items-center justify-between rounded-2xl border border-cream-dim bg-cream-card px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand/10 text-brand">
+              <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a9 9 0 1 0 9 9" /><path d="m12 7 4 4-4 4M16 11H3" /><path d="M17 3h4v4" /></svg>
+            </div>
+            <div><p className="text-sm font-semibold text-ink">Aju Banding Pelanggaran</p><p className="text-xs text-muted">Ajukan keberatan atas pelanggaran yang sudah diperiksa</p></div>
+          </div>
+          <span className="text-brand">→</span>
+        </Link>
         <Link href="/lembur" className="flex items-center justify-between rounded-2xl border border-cream-dim bg-cream-card px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand/10 text-brand">
@@ -424,23 +441,6 @@ function CrewDashboard({ nama }: { nama: string }) {
         />
       </div>
 
-      <div className="mt-6 px-5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Bulan Ini</p>
-        <div className="mt-2 space-y-2">
-          <StatRow label="Total Hours" value={`${monthStats.totalHours}h`} />
-          <StatRow label="Days Present" value={String(monthStats.daysPresent)} />
-          <StatRow label="Late Arrivals" value={String(monthStats.lateCount)} warn={monthStats.lateCount > 0} />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function StatRow({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border border-cream-dim bg-cream-card px-4 py-3">
-      <span className="text-sm text-ink">{label}</span>
-      <span className={`text-sm font-semibold ${warn ? 'text-warning' : 'text-ink'}`}>{value}</span>
     </div>
   )
 }

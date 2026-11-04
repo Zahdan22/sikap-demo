@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { loadPayrollCrewDetail } from '@/app/actions/payroll'
 import BackArrow from '@/components/BackArrow'
+import PayrollAccumulationTable from '@/components/PayrollAccumulationTable'
 type Detail = Extract<Awaited<ReturnType<typeof loadPayrollCrewDetail>>, { success: true }>
 
 const idr = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 })
@@ -33,27 +34,30 @@ export default function PayrollCrewDetailClient() {
 
   useEffect(() => {
     let active = true
-    if (!start || !end) {
-      setError('Rentang periode tidak tersedia. Kembali ke payroll dan pilih periode terlebih dahulu.')
-      setLoading(false)
-      return () => { active = false }
-    }
-    setLoading(true)
-    setResult(null)
-    setError('')
-    void loadPayrollCrewDetail(params.userId, start, end)
-      .then((response) => {
+    const timer = window.setTimeout(() => {
+      if (!start || !end) {
         if (!active) return
-        if (!response.success) setError(response.message)
-        else setResult(response as Detail)
+        setError('Rentang periode tidak tersedia. Kembali ke payroll dan pilih periode terlebih dahulu.')
         setLoading(false)
-      })
-      .catch((reason: unknown) => {
-        if (!active) return
-        setError(reason instanceof Error ? reason.message : 'Gagal memuat rincian payroll.')
-        setLoading(false)
-      })
-    return () => { active = false }
+        return
+      }
+      setLoading(true)
+      setResult(null)
+      setError('')
+      void loadPayrollCrewDetail(params.userId, start, end)
+        .then((response) => {
+          if (!active) return
+          if (!response.success) setError(response.message)
+          else setResult(response as Detail)
+          setLoading(false)
+        })
+        .catch((reason: unknown) => {
+          if (!active) return
+          setError(reason instanceof Error ? reason.message : 'Gagal memuat rincian payroll.')
+          setLoading(false)
+        })
+    }, 0)
+    return () => { active = false; window.clearTimeout(timer) }
   }, [params.userId, start, end])
 
   return <div className="min-h-full bg-cream pb-24">
@@ -69,12 +73,20 @@ export default function PayrollCrewDetailClient() {
           <h2 className="font-semibold text-ink">{result.person.nama}</h2>
           <p className="text-xs text-muted">@{result.person.username} · {result.start} s.d. {result.end}</p>
           {result.periodStatus && <p className="mt-2 text-xs font-semibold text-brand">Status payroll: {result.periodStatus === 'finalized' ? 'Difinalisasi' : 'Draf'}</p>}
-          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+          <div className="mt-3 grid grid-cols-2 gap-2 text-center">
             <div><p className="font-bold text-ink">{result.summary.days}</p><p className="text-[10px] text-muted">Hari lengkap</p></div>
             <div><p className="font-bold text-ink">{hoursFormat.format(result.summary.hours)} jam</p><p className="text-[10px] text-muted">Jam jadwal dibayar</p></div>
-            <div><p className="font-bold text-brand">{idr.format(result.summary.netPay)}</p><p className="text-[10px] text-muted">Gaji bersih</p></div>
           </div>
         </section>
+        <PayrollAccumulationTable
+          grossBasePay={result.summary.grossBasePay}
+          referralBonus={result.summary.referralBonus}
+          operationalBonus={result.summary.operationalBonus}
+          noLateReward={result.summary.noLateReward}
+          cashAdvance={result.summary.cashAdvance}
+          operationalFine={result.summary.operationalFine}
+          lateFine={result.summary.lateFine}
+        />
         {result.legacySnapshot && <p className="rounded-xl bg-warning/10 p-4 text-xs text-warning">Payroll ini memakai arsip lama. Jam shift dan waktu absensi yang tidak tersimpan ditampilkan sebagai tanda —. Total gaji tetap memakai nilai final yang tersimpan.</p>}
         <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Rincian per hari</h2>
         {result.details.map((shift) => <article key={shift.scheduleId} className="rounded-2xl border border-cream-dim bg-cream-card p-4">
@@ -82,10 +94,10 @@ export default function PayrollCrewDetailClient() {
           <div className="mt-3 grid grid-cols-2 gap-y-2 text-xs">
             <p className="text-muted">Check-in <b className="text-ink">{shift.jamMasukAktual ? new Date(shift.jamMasukAktual).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '—'}</b></p>
             <p className="text-muted">Check-out <b className="text-ink">{shift.jamPulangAktual ? new Date(shift.jamPulangAktual).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '—'}</b></p>
-            <p className="text-muted">Tier berlaku <b className="text-ink">{shift.tier?.replace('_', '-') || '—'}{shift.seniorPlusLevel ? ` +${shift.seniorPlusLevel}` : ''}</b></p>
+            <p className="text-muted">Status berlaku <b className="text-ink">{shift.tierLabel || shift.tier?.replaceAll('_', ' ') || '—'}{shift.seniorPlusLevel ? ` · ${shift.seniorPlusLabel || `Senior +${shift.seniorPlusLevel}`}` : ''}</b></p>
             <p className="text-muted">Tarif per jam <b className="text-ink">{shift.hourlyRate ? idr.format(shift.hourlyRate) : '—'}</b></p>
             <p className="text-muted">Gaji dasar <b className="text-ink">{idr.format(shift.basePay)}</b></p>
-            <p className="text-muted">Tunjangan Senior+ <b className="text-ink">{idr.format(shift.seniorPlusBonus)}</b></p>
+            <p className="text-muted">Tunjangan Masa Kerja <b className="text-ink">{idr.format(shift.seniorPlusBonus)}</b></p>
             {shift.attendanceDeductions > 0 && <p className="text-muted">Denda absensi <b className="text-warning">{idr.format(shift.attendanceDeductions)}</b></p>}
             {shift.attendancePoints > 0 && <p className="text-muted">Poin absensi <b className="text-warning">{shift.attendancePoints}</b></p>}
             {shift.penalties.map((penalty, index) => <p key={index} className="col-span-2 text-warning">{penalty.reason}{penalty.amount ? ` · ${idr.format(penalty.amount)}` : ''}{penalty.points ? ` · ${penalty.points} poin` : ''}</p>)}
@@ -105,15 +117,29 @@ export default function PayrollCrewDetailClient() {
           {result.overtimeDetails.length === 0 && <p className="mt-2 text-xs text-muted">Belum ada lembur yang disetujui pada periode ini.</p>}
         </section>
         <section className="rounded-2xl border border-cream-dim bg-cream-card p-4">
-          <h2 className="text-sm font-semibold text-ink">Pelanggaran diperiksa</h2>
-          <p className="mt-1 text-sm font-semibold text-brand">{result.violationPoints} poin · Denda {idr.format(result.violationDeductions)}</p>
+          <h2 className="text-sm font-semibold text-ink">Pelanggaran & denda</h2>
+          <p className="mt-1 text-sm font-semibold text-brand">{result.violationPoints} poin pelanggaran</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <p className="text-muted">Denda Telat <b className="text-warning">{idr.format(result.attendanceDeductions)}</b></p>
+            <p className="text-muted">Denda Operasional <b className="text-warning">{idr.format(result.violationDeductions)}</b></p>
+          </div>
           {result.violationDetails.map((item) => <div key={item.id} className="mt-3 border-t border-cream-dim pt-3 text-xs">
             <p className="font-semibold text-ink">{dateLabel(item.tanggal)}</p>
             <p className="mt-1 whitespace-pre-wrap break-words text-muted">{item.kesalahan}</p>
-            <p className="mt-1 text-warning">{item.poin} poin · {idr.format(item.denda)}</p>
+            <p className="mt-1 text-warning">{item.poin} poin · Denda Operasional {idr.format(item.denda)}</p>
           </div>)}
           {result.violationDetails.length === 0 && <p className="mt-2 text-xs text-muted">Belum ada pelanggaran yang diperiksa pada periode ini.</p>}
         </section>
+        {result.managementTitles.length > 0 && <section className="rounded-2xl border border-cream-dim bg-cream-card p-4">
+          <h2 className="text-sm font-semibold text-ink">Gelar management</h2>
+          {result.managementTitles.map((title) => <div key={title.id} className="mt-3 border-t border-cream-dim pt-3 first:mt-2">
+            <p className="font-semibold text-ink">{title.title}</p>
+            <p className="mt-1 text-xs text-muted">{dateLabel(title.startsOn)} s.d. {dateLabel(title.endsOn)}</p>
+            <p className="mt-1 text-xs text-muted">{idr.format(title.dailyAmount)} per hari</p>
+            <p className="mt-1 text-sm font-semibold text-brand">Total {idr.format(title.totalAmount)}</p>
+          </div>)}
+          <p className="mt-3 border-t border-cream-dim pt-3 text-sm font-semibold text-brand">Total gelar management {idr.format(result.managementTitlePay)}</p>
+        </section>}
         <section className="rounded-2xl border border-cream-dim bg-cream-card p-4">
           <h2 className="text-sm font-semibold text-ink">Penyesuaian payroll</h2>
           {result.adjustments.length ? <div className="mt-2 space-y-2">{result.adjustments.map((item) => <p key={item.id} className="text-xs text-muted">{adjustmentLabels[item.adjustment_type]} · {idr.format(item.amount)} · {item.reason}</p>)}</div> : <p className="mt-1 text-xs text-muted">Belum ada penyesuaian untuk crew ini pada periode tersebut.</p>}
